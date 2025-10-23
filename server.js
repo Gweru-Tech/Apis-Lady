@@ -1,336 +1,249 @@
 const express = require('express');
 const chalk = require('chalk');
-const fs = require('fs');
-const cors = require('cors');
 const path = require('path');
+const fs = require('fs');
 
 const app = express();
 const PORT = process.env.PORT || 4000;
 
-app.enable("trust proxy");
-app.set("json spaces", 2);
-
+// Middleware
 app.use(express.json());
-app.use(express.urlencoded({ extended: false }));
-app.use(cors());
-app.use('/src', express.static(path.join(__dirname, 'src')));
-app.use('/', express.static(path.join(__dirname, 'api-page')));
+app.use(express.urlencoded({ extended: true }));
 
-const settingsPath = path.join(__dirname, './src/settings.json');
-let settings;
-
-// Load settings safely
-try {
-    settings = JSON.parse(fs.readFileSync(settingsPath, 'utf-8'));
-} catch (error) {
-    console.log(chalk.bgHex('#FF6B6B').hex('#FFF').bold(` ⚠️  Warning: Could not load settings.json - ${error.message} `));
-    settings = {
-        name: "Ladybug🐞 APIs",
-        version: "v1.0.0",
-        apiSettings: {
-            creator: "Ntando Mods"
-        },
-        categories: []
-    };
-}
-
-// Custom JSON response middleware
+// CORS
 app.use((req, res, next) => {
-    const originalJson = res.json;
-    res.json = function (data) {
-        if (data && typeof data === 'object') {
-            const responseData = {
-                status: data.status || (data.success ? 'success' : 'error'),
-                creator: settings.apiSettings.creator || "Ntando Mods",
-                ...data
-            };
-            return originalJson.call(this, responseData);
-        }
-        return originalJson.call(this, data);
-    };
+    res.header('Access-Control-Allow-Origin', '*');
+    res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE');
+    res.header('Access-Control-Allow-Headers', 'Content-Type');
     next();
 });
 
-// API Routes Auto-loader
-let totalRoutes = 0;
-const apiFolder = path.join(__dirname, './src/api');
+// Load settings
+const settings = require('./src/settings.json');
 
-console.log(chalk.bgHex('#87CEEB').hex('#333').bold(' 🐞 Loading Ladybug API Routes... '));
+// Track start time
+const startTime = Date.now();
 
-function loadRoutes(folderPath, routePrefix = '') {
-    if (!fs.existsSync(folderPath)) {
-        console.log(chalk.bgHex('#FFB6C1').hex('#333').bold(` Creating API folder: ${folderPath} `));
-        fs.mkdirSync(folderPath, { recursive: true });
-        return;
-    }
+// Store loaded routes
+const loadedRoutes = [];
 
-    fs.readdirSync(folderPath).forEach((item) => {
-        const itemPath = path.join(folderPath, item);
-        const stat = fs.statSync(itemPath);
+// Auto-load API routes from src/api folder
+const apiFolder = path.join(__dirname, 'src', 'api');
 
-        if (stat.isDirectory()) {
-            // Recursively load routes from subdirectories
-            loadRoutes(itemPath, `$${routePrefix}/$$ {item}`);
-        } else if (path.extname(item) === '.js') {
-            try {
-                const routeName = path.basename(item, '.js');
-                const routePath = `$${routePrefix}/$$ {routeName}`;
-                
-                // Clear require cache to allow hot reloading
-                delete require.cache[require.resolve(itemPath)];
-                
-                // Load the route handler
-                const routeHandler = require(itemPath);
-                
-                // Validate route handler
-                if (typeof routeHandler !== 'function') {
-                    throw new Error('Route handler must be a function');
+if (fs.existsSync(apiFolder)) {
+    const apiFiles = fs.readdirSync(apiFolder).filter(file => file.endsWith('.js'));
+    
+    apiFiles.forEach(file => {
+        const routeName = path.basename(file, '.js');
+        const routePath = `/${routeName}`;
+        
+        try {
+            const routeHandler = require(path.join(apiFolder, file));
+            
+            // Register both GET and POST methods
+            app.get(routePath, async (req, res) => {
+                try {
+                    await routeHandler(req, res);
+                } catch (error) {
+                    res.status(500).json({
+                        status: 'error',
+                        success: false,
+                        error: error.message
+                    });
                 }
-                
-                // Register the route (both GET and POST)
-                app.get(routePath, routeHandler);
-                app.post(routePath, routeHandler);
-                
-                totalRoutes++;
-                console.log(chalk.bgHex('#FFFF99').hex('#333').bold(` ✓ Loaded: ${routePath} `));
-            } catch (error) {
-                console.log(chalk.bgHex('#FF6B6B').hex('#FFF').bold(` ✗ Failed to load: $${item} -$$ {error.message} `));
-            }
+            });
+            
+            app.post(routePath, async (req, res) => {
+                try {
+                    await routeHandler(req, res);
+                } catch (error) {
+                    res.status(500).json({
+                        status: 'error',
+                        success: false,
+                        error: error.message
+                    });
+                }
+            });
+            
+            loadedRoutes.push({
+                path: routePath,
+                name: routeName,
+                file: file
+            });
+            
+            console.log(chalk.green('✓'), `Loaded route: ${chalk.cyan(routePath)}`);
+        } catch (error) {
+            console.log(chalk.red('✗'), `Failed to load ${file}:`, error.message);
         }
     });
 }
 
-// Load all API routes
-loadRoutes(apiFolder);
+// Serve static files (homepage)
+app.use(express.static(path.join(__dirname, 'api-page')));
 
-console.log(chalk.bgHex('#90EE90').hex('#333').bold(' ═══════════════════════════════════════ '));
-console.log(chalk.bgHex('#90EE90').hex('#333').bold(` 🐞 Load Complete! Total Routes: ${totalRoutes} `));
-console.log(chalk.bgHex('#90EE90').hex('#333').bold(' ═══════════════════════════════════════ '));
-
-// Home route - API Documentation
+// Home route
 app.get('/', (req, res) => {
-    const indexPath = path.join(__dirname, 'api-page', 'index.html');
-    if (fs.existsSync(indexPath)) {
-        res.sendFile(indexPath);
-    } else {
-        res.send(`
-            <!DOCTYPE html>
-            <html>
-            <head>
-                <title>Ladybug🐞 APIs</title>
-                <style>
-                    body {
-                        font-family: Arial, sans-serif;
-                        display: flex;
-                        justify-content: center;
-                        align-items: center;
-                        min-height: 100vh;
-                        margin: 0;
-                        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-                        color: white;
-                        text-align: center;
-                    }
-                    .container {
-                        background: white;
-                        color: #333;
-                        padding: 40px;
-                        border-radius: 20px;
-                        box-shadow: 0 10px 40px rgba(0,0,0,0.2);
-                    }
-                    h1 { color: #667eea; margin-bottom: 20px; }
-                    a {
-                        display: inline-block;
-                        background: #667eea;
-                        color: white;
-                        padding: 12px 30px;
-                        text-decoration: none;
-                        border-radius: 25px;
-                        margin: 10px;
-                        transition: transform 0.3s;
-                    }
-                    a:hover { transform: translateY(-3px); }
-                </style>
-            </head>
-            <body>
-                <div class="container">
-                    <h1>🐞 Ladybug APIs</h1>
-                    <p>API Server is running!</p>
-                    <p>Total Routes: ${totalRoutes}</p>
-                    <div>
-                        <a href="/api/status">📊 Status</a>
-                        <a href="/api/routes">📋 Routes</a>
-                        <a href="/api/settings">⚙️ Settings</a>
-                    </div>
-                </div>
-            </body>
-            </html>
-        `);
-    }
+    res.sendFile(path.join(__dirname, 'api-page', 'index.html'));
 });
 
-// Settings/Config endpoint
+// API Status endpoint
+app.get('/api/status', (req, res) => {
+    const uptime = Math.floor((Date.now() - startTime) / 1000);
+    
+    res.json({
+        status: 'success',
+        creator: settings.author,
+        success: true,
+        server: 'online',
+        uptime: uptime,
+        uptimeFormatted: formatUptime(uptime),
+        version: settings.version,
+        totalRoutes: loadedRoutes.length + 7,
+        timestamp: new Date().toISOString(),
+        nodeVersion: process.version,
+        platform: process.platform
+    });
+});
+
+// API Routes list
+app.get('/api/routes', (req, res) => {
+    const allRoutes = [
+        { path: '/', methods: 'GET', description: 'Homepage' },
+        { path: '/api/info', methods: 'GET', description: 'API Information' },
+        { path: '/api/routes', methods: 'GET', description: 'List all routes' },
+        { path: '/api/settings', methods: 'GET', description: 'API settings' },
+        { path: '/api/status', methods: 'GET', description: 'Server status' },
+        { path: '/health', methods: 'GET', description: 'Health check' },
+        { path: '/ping', methods: 'GET', description: 'Ping endpoint' },
+        ...loadedRoutes.map(route => ({
+            path: route.path,
+            methods: 'GET, POST',
+            description: `${route.name} API endpoint`
+        }))
+    ];
+    
+    res.json({
+        status: 'success',
+        creator: settings.author,
+        success: true,
+        totalRoutes: allRoutes.length,
+        routes: allRoutes
+    });
+});
+
+// API Settings
 app.get('/api/settings', (req, res) => {
     res.json({
+        status: 'success',
+        creator: settings.author,
         success: true,
         data: settings
     });
 });
 
-// API Status endpoint
-app.get('/api/status', (req, res) => {
+// API Info
+app.get('/api/info', (req, res) => {
     res.json({
+        status: 'success',
+        creator: settings.author,
         success: true,
-        status: 'online',
-        uptime: process.uptime(),
-        totalRoutes: totalRoutes,
-        version: settings.version || 'v1.0.0',
-        name: settings.name || 'Ladybug🐞 APIs',
-        timestamp: new Date().toISOString(),
-        memory: {
-            used: `${Math.round(process.memoryUsage().heapUsed / 1024 / 1024)}MB`,
-            total: `${Math.round(process.memoryUsage().heapTotal / 1024 / 1024)}MB`
-        },
-        platform: process.platform,
-        nodeVersion: process.version
+        apiName: settings.name,
+        version: settings.version,
+        description: settings.description,
+        author: settings.author,
+        documentation: settings.documentation,
+        contact: settings.apiSettings.contact,
+        features: settings.features,
+        uptime: formatUptime(Math.floor((Date.now() - startTime) / 1000))
     });
 });
 
-// List all available routes
-app.get('/api/routes', (req, res) => {
-    const routes = [];
-    
-    app._router.stack.forEach((middleware) => {
-        if (middleware.route) {
-            const methods = Object.keys(middleware.route.methods).join(', ').toUpperCase();
-            routes.push({
-                path: middleware.route.path,
-                methods: methods
-            });
-        }
-    });
-
-    res.json({
-        success: true,
-        totalRoutes: routes.length,
-        routes: routes.sort((a, b) => a.path.localeCompare(b.path))
-    });
-});
-
-// Health check endpoint
+// Health check
 app.get('/health', (req, res) => {
-    res.json({
-        success: true,
+    res.json({ 
         status: 'healthy',
-        uptime: process.uptime(),
-        timestamp: new Date().toISOString()
+        uptime: Math.floor((Date.now() - startTime) / 1000)
     });
 });
 
 // Ping endpoint
 app.get('/ping', (req, res) => {
-    res.json({
-        success: true,
+    res.json({ 
         message: 'pong',
-        timestamp: Date.now()
+        timestamp: new Date().toISOString()
     });
 });
 
-// API Info endpoint
-app.get('/api/info', (req, res) => {
-    res.json({
-        success: true,
-        name: settings.name || 'Ladybug🐞 APIs',
-        version: settings.version || 'v1.0.0',
-        description: settings.description || 'API Server',
-        creator: settings.apiSettings?.creator || 'Ntando Mods',
-        totalRoutes: totalRoutes,
-        uptime: process.uptime(),
-        endpoints: {
-            status: '/api/status',
-            routes: '/api/routes',
-            settings: '/api/settings',
-            health: '/health',
-            ping: '/ping'
-        }
-    });
-});
-
-// 404 Handler
-app.use((req, res, next) => {
-    const notFoundPath = path.join(__dirname, 'api-page', '404.html');
-    
-    if (fs.existsSync(notFoundPath)) {
-        res.status(404).sendFile(notFoundPath);
-    } else {
+// 404 handler
+app.use((req, res) => {
+    if (req.path.startsWith('/api/')) {
         res.status(404).json({
-            success: false,
             status: 'error',
-            message: 'Route not found',
+            success: false,
+            message: 'API endpoint not found',
             path: req.path,
-            suggestion: 'Visit / for API documentation or /api/routes to see all available routes'
+            availableEndpoints: loadedRoutes.map(r => r.path)
         });
+    } else {
+        res.status(404).sendFile(path.join(__dirname, 'api-page', '404.html'));
     }
 });
 
-// Error Handler
+// Error handler
 app.use((err, req, res, next) => {
-    console.error(chalk.bgHex('#FF6B6B').hex('#FFF').bold(` ❌ Error: ${err.message} `));
-    console.error(err.stack);
+    console.error(chalk.red('Error:'), err);
+    res.status(500).json({
+        status: 'error',
+        success: false,
+        message: 'Internal server error',
+        error: err.message
+    });
+});
+
+// Helper function
+function formatUptime(seconds) {
+    const days = Math.floor(seconds / 86400);
+    const hours = Math.floor((seconds % 86400) / 3600);
+    const minutes = Math.floor((seconds % 3600) / 60);
+    const secs = seconds % 60;
     
-    const errorPath = path.join(__dirname, 'api-page', '500.html');
+    if (days > 0) return `$${days}d$$ {hours}h ${minutes}m`;
+    if (hours > 0) return `$${hours}h$$ {minutes}m ${secs}s`;
+    if (minutes > 0) return `$${minutes}m$$ {secs}s`;
+    return `${secs}s`;
+}
+
+// Start server
+app.listen(PORT, () => {
+    console.log('\n' + chalk.cyan('═══════════════════════════════════════'));
+    console.log(chalk.bold.magenta('  🐞 Ladybug APIs Server Started'));
+    console.log(chalk.cyan('═══════════════════════════════════════'));
+    console.log(chalk.green('✓'), 'Server running on:', chalk.yellow(`http://localhost:${PORT}`));
+    console.log(chalk.green('✓'), 'Environment:', chalk.yellow(process.env.NODE_ENV || 'development'));
+    console.log(chalk.green('✓'), 'Version:', chalk.yellow(settings.version));
+    console.log(chalk.green('✓'), 'Loaded routes:', chalk.yellow(loadedRoutes.length));
+    console.log(chalk.cyan('═══════════════════════════════════════\n'));
     
-    if (fs.existsSync(errorPath) && !req.xhr && req.accepts('html')) {
-        res.status(500).sendFile(errorPath);
-    } else {
-        res.status(500).json({
-            success: false,
-            status: 'error',
-            message: 'Internal server error',
-            error: process.env.NODE_ENV === 'development' ? err.message : 'Something went wrong',
-            timestamp: new Date().toISOString()
+    console.log(chalk.bold('📋 Available Routes:'));
+    console.log(chalk.gray('  GET  /                    - Homepage'));
+    console.log(chalk.gray('  GET  /api/status          - Server status'));
+    console.log(chalk.gray('  GET  /api/routes          - List all routes'));
+    console.log(chalk.gray('  GET  /api/settings        - API settings'));
+    console.log(chalk.gray('  GET  /api/info            - API information'));
+    console.log(chalk.gray('  GET  /health              - Health check'));
+    console.log(chalk.gray('  GET  /ping                - Ping endpoint\n'));
+    
+    if (loadedRoutes.length > 0) {
+        console.log(chalk.bold('🎯 Loaded API Routes:'));
+        loadedRoutes.forEach(route => {
+            console.log(chalk.gray(`  GET/POST $${route.path.padEnd(20)} -$$ {route.name}`));
         });
+        console.log('');
     }
 });
 
 // Graceful shutdown
 process.on('SIGTERM', () => {
-    console.log(chalk.bgHex('#FFB6C1').hex('#333').bold(' 🐞 SIGTERM received, shutting down gracefully... '));
-    server.close(() => {
-        console.log(chalk.bgHex('#90EE90').hex('#333').bold(' 🐞 Server closed successfully '));
-        process.exit(0);
-    });
+    console.log(chalk.yellow('\n⚠️  SIGTERM signal received: closing HTTP server'));
+    process.exit(0);
 });
-
-process.on('SIGINT', () => {
-    console.log(chalk.bgHex('#FFB6C1').hex('#333').bold(' 🐞 SIGINT received, shutting down gracefully... '));
-    server.close(() => {
-        console.log(chalk.bgHex('#90EE90').hex('#333').bold(' 🐞 Server closed successfully '));
-        process.exit(0);
-    });
-});
-
-// Handle uncaught exceptions
-process.on('uncaughtException', (err) => {
-    console.error(chalk.bgHex('#FF6B6B').hex('#FFF').bold(' ❌ Uncaught Exception: '));
-    console.error(err);
-    process.exit(1);
-});
-
-process.on('unhandledRejection', (reason, promise) => {
-    console.error(chalk.bgHex('#FF6B6B').hex('#FFF').bold(' ❌ Unhandled Rejection at: '), promise);
-    console.error(chalk.bgHex('#FF6B6B').hex('#FFF').bold(' Reason: '), reason);
-});
-
-// Start server
-const server = app.listen(PORT, () => {
-    console.log(chalk.bgHex('#87CEEB').hex('#333').bold(' ═══════════════════════════════════════ '));
-    console.log(chalk.bgHex('#87CEEB').hex('#333').bold(` 🐞 Ladybug API Server Started! `));
-    console.log(chalk.bgHex('#87CEEB').hex('#333').bold(` 🌐 Port: ${PORT} `));
-    console.log(chalk.bgHex('#87CEEB').hex('#333').bold(` 📡 Status: http://localhost:${PORT}/api/status `));
-    console.log(chalk.bgHex('#87CEEB').hex('#333').bold(` 📚 Docs: http://localhost:${PORT}/ `));
-    console.log(chalk.bgHex('#87CEEB').hex('#333').bold(` 📋 Routes: http://localhost:${PORT}/api/routes `));
-    console.log(chalk.bgHex('#87CEEB').hex('#333').bold(` ⚙️  Settings: http://localhost:${PORT}/api/settings `));
-    console.log(chalk.bgHex('#87CEEB').hex('#333').bold(' ═══════════════════════════════════════ '));
-});
-
-module.exports = app;
