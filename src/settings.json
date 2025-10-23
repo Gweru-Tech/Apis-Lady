@@ -1,0 +1,200 @@
+{
+  "name": "Ladybug🐞 APIs",
+  "version": "v2.0.0",
+  "description": "A powerful and flexible API server with YouTube, Music, and Media processing capabilities",
+  "author": "Ntando Mods",
+  "website": "https://your-api.onrender.com",
+  "documentation": "https://your-api.onrender.com/docs",
+  "apiSettings": {
+    "creator": "Ntando Mods",
+    "contact": "support@ladybugapi.com",
+    "rateLimit": {
+      "enabled": true,
+      "max": 100,
+      "windowMs": 900000,
+      "message": "Too many requests, please try again later"
+    },
+    "cors": {
+      "enabled": true,
+      "origin": "*"
+    },
+    "cache": {
+      "enabled": true,
+      "ttl": 3600
+    }
+  },
+  "features": {
+    "youtubeDownload": true,
+    "musicSearch": true,
+    "videoProcessing": true,
+    "mediaConversion": true,
+    "analytics": true
+  },
+  "categories": [
+    {
+      "name": "General",
+      "description": "General purpose APIs",
+      "icon": "🔧",
+      "routes": [
+        {
+          "path": "/example",
+          "name": "Example API",
+          "description": "Example API endpoint",
+          "method": ["GET", "POST"]
+        }
+      ]
+    },
+    {
+      "name": "Utility",
+      "description": "Utility and tools APIs",
+      "icon": "🛠️",
+      "routes": [
+        {
+          "path": "/weather",
+          "name": "Weather API",
+          "description": "Get weather information for any city",
+          "method": ["GET", "POST"],
+          "params": ["city", "unit"]
+        },
+        {
+          "path": "/qrcode",
+          "name": "QR Code Generator",
+          "description": "Generate QR codes",
+          "method": ["GET", "POST"],
+          "params": ["text", "size", "format"]
+        },
+        {
+          "path": "/shorturl",
+          "name": "URL Shortener",
+          "description": "Shorten long URLs",
+          "method": ["GET", "POST"],
+          "params": ["url", "action", "code"]
+        },
+        {
+          "path": "/translate",
+          "name": "Translation API",
+          "description": "Translate text between languages",
+          "method": ["GET", "POST"],
+          "params": ["text", "to", "from"]
+        },
+        {
+          "path": "/base64",
+          "name": "Base64 Encoder/Decoder",
+          "description": "Encode or decode base64 strings",
+          "method": ["GET", "POST"],
+          "params": ["text", "action"]
+        },
+        {
+          "path": "/hash",
+          "name": "Hash Generator",
+          "description": "Generate various hash types",
+          "method": ["GET", "POST"],
+          "params": ["text", "algorithm"]
+        },
+        {
+          "path": "/password",
+          "name": "Password Generator",
+          "description": "Generate secure passwords",
+          "method": ["GET", "POST"],
+          "params": ["length", "numbers", "symbols"]
+        },
+        {
+          "path": "/random",
+          "name": "Random Data Generator",
+          "description": "Generate random data",
+          "method": ["GET", "POST"],
+          "params": ["type", "min", "max", "count"]
+        }
+      ]
+    },
+    {
+      "name": "Information",
+      "description": "Information and data APIs",
+      "icon": "ℹ️",
+      "routes": [
+        {
+          "path": "/crypto",
+          "name": "Cryptocurrency Prices",
+          "description": "Get real-time crypto prices",
+          "method": ["GET", "POST"],
+          "params": ["symbol", "currency"]
+        },
+        {
+          "path": "/ipinfo",
+          "name": "IP Information",
+          "description": "Get detailed IP information",
+          "method": ["GET", "POST"],
+          "params": ["ip"]
+        }
+      ]
+    },
+    {
+      "name": "YouTube & Media",
+      "description": "YouTube download and media APIs",
+      "icon": "📺",
+      "routes": [
+        {
+          "path": "/ytsearch",
+          "name": "YouTube Search",
+          "description": "Search YouTube videos",
+          "method": ["GET", "POST"],
+          "params": ["query", "limit", "type"]
+        },
+        {
+          "path": "/ytmp3",
+          "name": "YouTube to MP3",
+          "description": "Download YouTube videos as MP3",
+          "method": ["GET", "POST"],
+          "params": ["url", "quality"]
+        },
+        {
+          "path": "/ytmp4",
+          "name": "YouTube to MP4",
+          "description": "Download YouTube videos as MP4",
+          "method": ["GET", "POST"],
+          "params": ["url", "quality"]
+        },
+        {
+          "path": "/video",
+          "name": "Video Information",
+          "description": "Get video information and metadata",
+          "method": ["GET", "POST"],
+          "params": ["url", "action"]
+        }
+      ]
+    },
+    {
+      "name": "Music",
+      "description": "Music search and information APIs",
+      "icon": "🎵",
+      "routes": [
+        {
+          "path": "/music",
+          "name": "Music Search",
+          "description": "Search music, artists, and albums",
+          "method": ["GET", "POST"],
+          "params": ["query", "type", "artist", "album"]
+        }
+      ]
+    }
+  ],
+  "endpoints": {
+    "status": "/api/status",
+    "routes": "/api/routes",
+    "settings": "/api/settings",
+    "health": "/health",
+    "ping": "/ping",
+    "info": "/api/info",
+    "docs": "/docs"
+  },
+  "social": {
+    "github": "https://github.com/yourusername",
+    "twitter": "https://twitter.com/yourusername",
+    "email": "support@ladybugapi.com"
+  },
+  "support": {
+    "documentation": "https://docs.ladybugapi.com",
+    "issues": "https://github.com/yourusername/issues",
+    "discord": "https://discord.gg/yourinvite"
+  }
+}
