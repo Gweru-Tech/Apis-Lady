@@ -1,85 +1,114 @@
 /**
- * YouTube to MP3 Download API
+ * YouTube to MP3 Download API - Production Ready
  * GET/POST /ytmp3?url=https://youtube.com/watch?v=VIDEO_ID&quality=128
  */
+
+const ytdl = require('ytdl-core');
+const ffmpeg = require('fluent-ffmpeg');
+const ffmpegPath = require('ffmpeg-static');
+const { PassThrough } = require('stream');
+const fs = require('fs');
+const path = require('path');
+const os = require('os');
+
+// Set ffmpeg path
+ffmpeg.setFfmpegPath(ffmpegPath);
 
 module.exports = async (req, res) => {
     try {
         const { 
             url, 
             quality = '128',
-            title
-        } = req.query;
+            format = 'mp3'
+        } = req.method === 'POST' ? req.body : req.query;
 
         if (!url) {
             return res.status(400).json({
                 success: false,
-                error: 'YouTube URL parameter is required'
+                error: 'YouTube URL parameter is required',
+                example: '/ytmp3?url=https://youtube.com/watch?v=dQw4w9WgXcQ'
             });
         }
 
-        // Extract video ID from URL
-        const videoId = extractVideoId(url);
-        
-        if (!videoId) {
+        // Validate YouTube URL
+        if (!ytdl.validateURL(url)) {
             return res.status(400).json({
                 success: false,
                 error: 'Invalid YouTube URL'
             });
         }
 
-        // Supported quality options
-        const qualities = ['64', '128', '192', '256', '320'];
-        const selectedQuality = qualities.includes(quality) ? quality : '128';
+        // Get video info
+        const info = await ytdl.getInfo(url);
+        const videoDetails = info.videoDetails;
 
-        // Generate download information
-        const downloadInfo = {
-            videoId: videoId,
-            title: title || 'YouTube Audio',
-            url: url,
-            format: 'mp3',
-            quality: `${selectedQuality}kbps`,
-            fileSize: calculateFileSize(selectedQuality, 240), // Assuming 4 min video
-            duration: '4:00',
-            thumbnail: `https://i.ytimg.com/vi/${videoId}/maxresdefault.jpg`,
-            downloadUrl: `https://api.example.com/download/audio/${videoId}?quality=${selectedQuality}`,
-            directLink: `${req.protocol}://$${req.get('host')}/download/mp3/$$ {videoId}`,
-            status: 'ready',
-            conversionTime: '5-10 seconds',
-            expiresIn: '2 hours',
-            availableQualities: qualities.map(q => ({
-                quality: `${q}kbps`,
-                fileSize: calculateFileSize(q, 240)
-            }))
+        // Supported quality options
+        const qualities = {
+            '64': '64k',
+            '128': '128k',
+            '192': '192k',
+            '256': '256k',
+            '320': '320k'
         };
 
-        res.json({
-            success: true,
-            data: downloadInfo,
-            message: 'MP3 download link generated successfully',
-            note: 'This is a demo API. In production, integrate with ytdl-core or similar libraries.'
+        const selectedQuality = qualities[quality] || '128k';
+
+        // Calculate estimated file size
+        const durationInSeconds = parseInt(videoDetails.lengthSeconds);
+        const estimatedSize = calculateFileSize(quality, durationInSeconds);
+
+        // Set response headers for audio download
+        const sanitizedTitle = videoDetails.title
+            .replace(/[^\w\s-]/g, '')
+            .trim()
+            .replace(/\s+/g, '_')
+            .substring(0, 100);
+
+        res.setHeader('Content-Disposition', `attachment; filename="$${sanitizedTitle}.$$ {format}"`);
+        res.setHeader('Content-Type', 'audio/mpeg');
+
+        // Create audio stream
+        const audioStream = ytdl(url, {
+            quality: 'highestaudio',
+            filter: 'audioonly'
         });
+
+        // Convert to MP3 using ffmpeg
+        const ffmpegProcess = ffmpeg(audioStream)
+            .audioBitrate(selectedQuality)
+            .format(format)
+            .on('start', (commandLine) => {
+                console.log('FFmpeg started:', commandLine);
+            })
+            .on('error', (err) => {
+                console.error('FFmpeg error:', err);
+                if (!res.headersSent) {
+                    res.status(500).json({
+                        success: false,
+                        error: 'Audio conversion failed',
+                        details: err.message
+                    });
+                }
+            })
+            .on('end', () => {
+                console.log('Conversion completed');
+            });
+
+        // Pipe the converted audio to response
+        ffmpegProcess.pipe(res, { end: true });
+
     } catch (error) {
-        res.status(500).json({
-            success: false,
-            error: error.message
-        });
+        console.error('Error:', error);
+        
+        if (!res.headersSent) {
+            res.status(500).json({
+                success: false,
+                error: error.message || 'Failed to download audio',
+                details: error.stack
+            });
+        }
     }
 };
-
-function extractVideoId(url) {
-    const patterns = [
-        /(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/embed\/)([a-zA-Z0-9_-]{11})/,
-        /^([a-zA-Z0-9_-]{11})$/
-    ];
-
-    for (const pattern of patterns) {
-        const match = url.match(pattern);
-        if (match) return match[1];
-    }
-
-    return null;
-}
 
 function calculateFileSize(quality, durationSeconds) {
     const bitrate = parseInt(quality);
